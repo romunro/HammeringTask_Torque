@@ -1,0 +1,27 @@
+# Build artifacts
+build/
+bin/
+lib/
+CMakeLists.txt.user*
+compile_commands.json
+.cache/
+.direnv/
+result
+
+# IDE and editor files
+.vscode/
+.nvim.lua
+.idea/
+*.swp
+*.swo
+*~
+*.autosave
+
+# Logs and data
+*.log
+*.csv
+*.bin
+
+# OS files
+.DS_Store
+Thumbs.db
