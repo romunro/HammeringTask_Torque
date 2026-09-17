@@ -16,62 +16,144 @@ StatesFiles:
 - "@MC_STATES_RUNTIME_INSTALL_PREFIX@/data"
 # If true, state factory will be more verbose
 VerboseStateFactory: false
+#test
 # Additional robots to load
 robots:
   ground:
     module: env/ground
-# General constraints, always on
-constraints:
-- type: contact
-- type: dynamics
-  damper: [0.1, 0.01, 0.5]
-- type: compoundJoint
+  nail:
+    module: object/nail
+    init_pos:
+      translation:
+      - 0.4
+      - 0.4
+      - 0.9
+      rotation:
+      - 0
+      - 0
+      - 0
+
 # Collision constraint
 collisions:
 - type: collision
   useMinimal: true
-# Initial set of contacts
-contacts:
-- r2: ground
-  r1Surface: LeftFoot
-  r2Surface: AllGround
-- r2: ground
-  r1Surface: RightFoot
-  r2Surface: AllGround
 
-# Some options for a specific robot
-  hrp5_p:                                                                                                                             
-    posture:                                                                                                                          
-      stiffness: 40.0                                                                                                                 
+ControlMode: Torque
+
+# Stage 1: Posture task (weight 1.0, stiffness 10.0)
+hrp5_p:
+  posture:
+    stiffness: 100.0
+    weight: 500.0
+
+global_controller_params:
+  hitting_constraint_paramater:
+    damping:
+    - 0.1
+    - 0.01
+    - 0.5
+    velocity_percentage: 0.9
+    infTorque: true
+  stabilizer:
+    torso:
+      stiffness: 10.0
       weight: 100.0
-  
-ObserverPipelines:                                                                                                                  
-    name: ObserverPipeline                                                                                                            
-    gui: true                                                                                                                         
-    observers:                                                                                                                        
-    - type: Encoder                                                                                                                   
-      config:                                                                                                                         
-        velocity: encoderVelocities                                                                                                   
-    - type: Attitude                                                                                                                  
-      update: true                                                                                                                    
-    - type: KinematicInertial                                                                                                         
-      update: true                                                                                                                    
-      config:                                                                                                                         
-        anchorFrame:                                                                                                                  
-          maxAnchorFrameDiscontinuity: 0.05                                                                                           
-    - type: Tilt                                                                                                                      
-      required: true                                                                                                                  
-      update: true                                                                                                                    
-      config:                                                                                                                         
-        contacts:
-          contactsDetection: Surfaces
-          surfacesForContactDetection:
-          - RightFootCenter
-          - LeftFootCenter
-# Implement some additional text states
-states: {}
+      pitch: -0.05
+    pelvis:
+      stiffness: 100.0
+      weight: 500.0
+    dcm:
+      p:
+      - 4.0
+      - 4.0
+      i:
+      - 5.0
+      - 5.0
+      d:
+      - 0.5
+      - 0.5
+    com:
+      stiffness:
+      - 1000.0
+      - 1000.0
+      - 500.0
+      weight: 1000.0
+      dimWeight:
+      - 1.0
+      - 1.0
+      - 0.5
+      # staticTarget:
+      #   com: [0.11, 0.00185, 0.96]
+      height: 0.94
+    contact:
+      weight: 100000.0
+      stiffness:
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      damping:
+      - 300.0
+      - 300.0
+      - 300.0
+      - 300.0
+      - 300.0
+      - 300.0
+      admittance:
+      - 0.005
+      - 0.005
+      df_admittance:
+      - 0.0
+      - 0.0
+      - 0.0
+
+ObserverPipelines:
+  name: ObserverPipeline
+  gui: true
+  observers:
+  - type: Encoder # Joint state (q, q̇)
+    config:
+      velocity: encoderVelocities
+  # - type: Attitude # Orientation (R) from imu data
+  #   update: false
+  # - type: KinematicInertial #Full 6D Pose (R, p) & Velocity from imu data and using the foot frame
+  #   update: false
+  #   config:
+  #     anchorFrame:
+  #       maxAnchorFrameDiscontinuity: 0.05
+  # - type: BodySensor  # Full 6D Pose (R, p) & Velocity from groundtruth in Mujoco
+  #   update: false
+  #   config:
+  #     bodySensor: FloatingBase
+  - type: Tilt # Full 6D Pose (R, p) & Velocity nonlinear observer used for walking
+    required: true
+    update: true
+    config:
+      leggedOdometry:
+        kappa: 10
+        lambdaInf: 0.001
+        correctContacts: true
+        odometryType: Flat
+      filterGains:
+        initAlpha: 100
+        initBeta: 1
+        initGamma: 2
+        finalAlpha: 100
+        finalBeta: 1
+        finalGamma: 2
+      contacts:
+        contactsDetection: Surfaces
+        surfacesForContactDetection:
+        - RightFootCenter
+        - LeftFootCenter
+        schmittTriggerLowerPropThreshold: 0.15
+        schmittTriggerUpperPropThreshold: 0.30
+
 # Transitions map
 transitions:
-- [HammeringTask_Torque_Initial, OK, HammeringTask_Torque_Initial, Strict]
+- [HammeringTask_Torque_Initial, START_HAMMERING, HammeringTask_Torque_Initial, Auto]
+
 # Initial state
 init: HammeringTask_Torque_Initial
