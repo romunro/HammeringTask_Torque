@@ -40,13 +40,34 @@ contacts:
   r2Surface: AllGround
 
 # Some options for a specific robot
-jvrc1:
-  posture:
-    stiffness: 1
-    weight: 10
-  ff:
-    stiffness: 2
-    weight: 100
+  hrp5_p:                                                                                                                             
+    posture:                                                                                                                          
+      stiffness: 40.0                                                                                                                 
+      weight: 100.0
+  
+ObserverPipelines:                                                                                                                  
+    name: ObserverPipeline                                                                                                            
+    gui: true                                                                                                                         
+    observers:                                                                                                                        
+    - type: Encoder                                                                                                                   
+      config:                                                                                                                         
+        velocity: encoderVelocities                                                                                                   
+    - type: Attitude                                                                                                                  
+      update: true                                                                                                                    
+    - type: KinematicInertial                                                                                                         
+      update: true                                                                                                                    
+      config:                                                                                                                         
+        anchorFrame:                                                                                                                  
+          maxAnchorFrameDiscontinuity: 0.05                                                                                           
+    - type: Tilt                                                                                                                      
+      required: true                                                                                                                  
+      update: true                                                                                                                    
+      config:                                                                                                                         
+        contacts:
+          contactsDetection: Surfaces
+          surfacesForContactDetection:
+          - RightFootCenter
+          - LeftFootCenter
 # Implement some additional text states
 states: {}
 # Transitions map

@@ -14,8 +14,8 @@ void HammeringTask_Torque_Initial::start(mc_control::fsm::Controller & ctl_)
 bool HammeringTask_Torque_Initial::run(mc_control::fsm::Controller & ctl_)
 {
   auto & ctl = static_cast<HammeringTask_Torque &>(ctl_);
-  output("OK");
-  return true;
+  // output("OK");
+  return false;
 }
 
 void HammeringTask_Torque_Initial::teardown(mc_control::fsm::Controller & ctl_)
