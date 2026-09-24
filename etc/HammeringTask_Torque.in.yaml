@@ -2,7 +2,7 @@
 # If true, the FSM transitions are managed by an external tool
 Managed: false
 # If true and the FSM is self-managed, transitions should be triggered
-StepByStep: true
+StepByStep: false
 # Change idle behaviour, if true the state is kept until transition,
 # otherwise the FSM holds the last state until transition
 IdleKeepState: false
@@ -16,7 +16,7 @@ StatesFiles:
 - "@MC_STATES_RUNTIME_INSTALL_PREFIX@/data"
 # If true, state factory will be more verbose
 VerboseStateFactory: false
-#test
+
 # Additional robots to load
 robots:
   ground:
@@ -40,50 +40,110 @@ collisions:
 
 ControlMode: Torque
 
-# Stage 1: Posture task (weight 1.0, stiffness 10.0)
+# Stage 1: Posture task (tuned for torque balancing)
 hrp5_p:
   posture:
     stiffness: 100.0
+    damping: 20.0
     weight: 500.0
 
 global_controller_params:
+  timestep: 0.002
+  gui:
+    stop_hammering_button_name: Stop hammering
+    linear_constraint_button_name: Linear constraint activation
+    plot_dt: 0.05
+    plot_joint: LWRR
+  quality_of_life:
+    bezier_curve_verbose_active: false
+    jacobian_verbose_active: false
+  frames:
+    Hammer_Head_frame: Hammer_head
+    nail: nail
+  impact_detection:
+    nail_impact_force_threshold: 100
+    sensor_impact_force_threshold: 250
+    max_number_of_hits: 1
   hitting_constraint_paramater:
+    c_res: 1   
+    delta_t: 0.001
+    lambda_high: 60
+    lambda_low: 25
+    impulsive_tau_limit_multiplier: 1
     damping:
     - 0.1
     - 0.01
     - 0.5
     velocity_percentage: 0.9
+    Activation_height: 0
+    tau_high_mulitplier: 1.5
+    K: 0.5
     infTorque: true
+  hitting_tasks_paramater:
+    bspline_task_weight: 2000
+    bspline_duration: 2
+    bspline_waypoint_height: 0.4
+    bspline_task_stiffness: 100
+    bspline_task_damping: 20
+    bspline_dimweight_tx: 1
+    bspline_dimweight_ty: 1
+    bspline_dimweight_tz: 1
+    bspline_dimweight_rx: 0
+    bspline_dimweight_ry: 0
+    bspline_dimweight_rz: 0
+    arm_nullspace_posture_weight: 0.01 
+    arm_nullspace_posture_stiffness: 1 
+    effective_mass_maximization_task_weight: 0
+    vector_orientation_task_weight: 200 
+    vector_orientation_task_stiffness: 40
+    vector_orientation_task_damping: 12
+    curve_constraints:
+      final_velocity:
+      - 0
+      - 0
+      - -0.5 
+      init_velocity:
+      - 0
+      - 0
+      - 0
+    nail_target_position:
+      - 0.4
+      - 0.4
+      - 0.9   
   stabilizer:
     torso:
-      stiffness: 10.0
-      weight: 100.0
-      pitch: -0.05
+      stiffness: 50.0
+      damping: 25.0
+      weight: 300.0
+      # pitch: -0.05
     pelvis:
-      stiffness: 100.0
-      weight: 500.0
+      stiffness: 1000.0
+      damping: 100.0
+      weight: 2000.0
     dcm:
       p:
-      - 4.0
-      - 4.0
+      - 3.0
+      - 3.0
       i:
-      - 5.0
-      - 5.0
+      - 1.5
+      - 1.5
       d:
-      - 0.5
-      - 0.5
+      - 1.2
+      - 1.2
     com:
       stiffness:
       - 1000.0
       - 1000.0
       - 500.0
+      damping:
+      - 70.0
+      - 70.0
+      - 50.0
       weight: 1000.0
       dimWeight:
       - 1.0
       - 1.0
       - 0.5
-      # staticTarget:
-      #   com: [0.11, 0.00185, 0.96]
       height: 0.94
     contact:
       weight: 100000.0
@@ -95,19 +155,61 @@ global_controller_params:
       - 1.0
       - 1.0
       damping:
-      - 300.0
-      - 300.0
-      - 300.0
-      - 300.0
-      - 300.0
-      - 300.0
+      - 400.0
+      - 400.0
+      - 400.0
+      - 400.0
+      - 400.0
+      - 400.0
       admittance:
-      - 0.005
-      - 0.005
+      - 0.003
+      - 0.003
       df_admittance:
       - 0.0
       - 0.0
+      - 0.0001
+      df_damping:
       - 0.0
+      - 0.0
+      - 1.0
+
+states:
+  Hammer::Swing:
+    base: HammeringSwing
+  Hammer::Retract:
+    base: HammeringRetract
+    post_impact_get_away_distance: 0.01
+    transform_task_stiffness: 30.0
+    transform_task_damping: 25.0
+    transform_task_weight: 100.0
+    posture_task_stiffness: 1.0
+    posture_task_weight: 10.0
+    timeout: 2.0
+  Hammer::HammeringFSM:
+    base: Meta
+    transitions:
+    - - HammeringInitial
+      - BUTTON_CLICKED
+      - Hammer::Swing
+      - Auto
+    - - Hammer::Swing
+      - STOP
+      - Hammer::Retract
+      - Auto
+    - - Hammer::Retract
+      - STOP
+      - HammeringInitial
+      - Auto
+
+# Transitions map
+transitions:
+- - Hammer::HammeringFSM
+  - OK
+  - Hammer::HammeringFSM
+  - Strict
+
+# Initial state
+init: Hammer::HammeringFSM
 
 ObserverPipelines:
   name: ObserverPipeline
@@ -123,13 +225,13 @@ ObserverPipelines:
   #   config:
   #     anchorFrame:
   #       maxAnchorFrameDiscontinuity: 0.05
-  # - type: BodySensor  # Full 6D Pose (R, p) & Velocity from groundtruth in Mujoco
-  #   update: false
-  #   config:
-  #     bodySensor: FloatingBase
-  - type: Tilt # Full 6D Pose (R, p) & Velocity nonlinear observer used for walking
-    required: true
+  - type: BodySensor  # Full 6D Pose (R, p) & Velocity from groundtruth in Mujoco
     update: true
+    config:
+      bodySensor: FloatingBase
+  - type: Tilt # Full 6D Pose (R, p) & Velocity nonlinear observer used for walking
+    required: false
+    update: false
     config:
       leggedOdometry:
         kappa: 10
@@ -150,10 +252,3 @@ ObserverPipelines:
         - LeftFootCenter
         schmittTriggerLowerPropThreshold: 0.15
         schmittTriggerUpperPropThreshold: 0.30
-
-# Transitions map
-transitions:
-- [HammeringTask_Torque_Initial, START_HAMMERING, HammeringTask_Torque_Initial, Auto]
-
-# Initial state
-init: HammeringTask_Torque_Initial

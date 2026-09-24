@@ -1,3 +1,5 @@
-add_fsm_state_simple(HammeringTask_Torque_Initial)
+add_fsm_state_simple(HammeringInitial)
+add_fsm_state_simple(HammeringSwing)
+add_fsm_state_simple(HammeringRetract)
 
 add_fsm_data_directory(data)

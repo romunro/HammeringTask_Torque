@@ -1,9 +1,13 @@
 set(controller_SRC
   HammeringTask_Torque.cpp
+  Parameters.cpp
+  Logging.cpp
+  GUI.cpp
 )
 
 set(controller_HDR
   HammeringTask_Torque.h
+  Parameters.h
 )
 
 add_library(${PROJECT_NAME} SHARED ${controller_SRC} ${controller_HDR})
@@ -15,6 +19,10 @@ install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin)
 
 add_controller(${PROJECT_NAME}_controller lib.cpp "")
+find_package(visualization_msgs REQUIRED)
+find_package(ament_cmake REQUIRED)
+
 target_link_libraries(${PROJECT_NAME}_controller PUBLIC ${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PUBLIC mc_rtc::mc_rtc_ros ${catkin_LIBRARIES})
 
 add_subdirectory(states)
