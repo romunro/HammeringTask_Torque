@@ -12,6 +12,7 @@
 
 #include <mc_tasks/lipm_stabilizer/StabilizerTask.h>
 #include <mc_tasks/lipm_stabilizer/Contact.h>
+#include <mc_filter/LowPass.h>
 
 #include <vector>
 #include <string>
@@ -88,6 +89,13 @@ public:
 
   std::vector<double> qd;
   Eigen::VectorXd qdm;
+  mc_filter::LowPass<Eigen::VectorXd> qd_filter_{0.005, 0.03183};
+  mc_filter::LowPass<Eigen::VectorXd> qdm_filter_{0.005, 0.03183};
+  mc_filter::LowPass<Eigen::VectorXd> tau_imp_derivate_filter_{0.005, 0.03183};
+  mc_filter::LowPass<Eigen::VectorXd> tau_imp_derivate_qp_filter_{0.005, 0.03183};
+  mc_filter::LowPass<Eigen::VectorXd> tau_imp_derivate_act_filter_{0.005, 0.03183};
+  mc_filter::LowPass<Eigen::VectorXd> tau_imp_derivate_num_filter_{0.005, 0.03183};
+  double filter_cutoff_period_ = 0.03183;
   Eigen::VectorXd qd_previous;
   Eigen::VectorXd tau_imp_true_speed;
   Eigen::VectorXd tau_imp_true_force;
@@ -95,6 +103,8 @@ public:
   Eigen::VectorXd tau_imp_act;
   Eigen::VectorXd tau_imp_previous;
   Eigen::VectorXd tau_imp_derivate;
+  Eigen::VectorXd tau_imp_derivate_qp;
+  Eigen::VectorXd tau_imp_derivate_act;
   Eigen::VectorXd tau_imp_derivate_num;
   Eigen::VectorXd tau_imp_derivate_low_limit;
   Eigen::VectorXd tau_imp_derivate_high_limit;

@@ -84,6 +84,7 @@ struct ImpulseParams
   std::array<double, 3> damping = {0.1, 0.01, 0.5};
   double velocity_percentage = 0.9;
   bool infTorque = true;
+  double filter_cutoff_frequency = 5.0;
 };
 
 struct ImpactDetectionParams
@@ -96,7 +97,7 @@ struct ImpactDetectionParams
 struct ControllerParams
 {
   std::string control_mode = "Torque";
-  double timestep = 0.002;
+  double timestep = 0.005;
   std::string hammer_head_frame = "Hammer_head";
   std::string nail_frame = "nail";
   std::string nail_robot_name = "nail";

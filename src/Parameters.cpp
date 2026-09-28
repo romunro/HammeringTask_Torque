@@ -63,6 +63,7 @@ void ControllerParams::load(const mc_rtc::Configuration & config)
     if(hc.has("tau_high_mulitplier")) hc("tau_high_mulitplier", impulse.tau_high_multiplier);
     if(hc.has("K")) hc("K", impulse.K);
     if(hc.has("infTorque")) hc("infTorque", impulse.infTorque);
+    if(hc.has("filter_cutoff_frequency")) hc("filter_cutoff_frequency", impulse.filter_cutoff_frequency);
   }
 
   std::string robot_key = "hrp5_p";

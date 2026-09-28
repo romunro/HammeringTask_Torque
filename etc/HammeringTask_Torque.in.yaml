@@ -48,7 +48,7 @@ hrp5_p:
     weight: 500.0
 
 global_controller_params:
-  timestep: 0.002
+  timestep: 0.005
   gui:
     stop_hammering_button_name: Stop hammering
     linear_constraint_button_name: Linear constraint activation
@@ -79,12 +79,13 @@ global_controller_params:
     tau_high_mulitplier: 1.5
     K: 0.5
     infTorque: true
+    filter_cutoff_frequency: 5.0
   hitting_tasks_paramater:
     bspline_task_weight: 2000
     bspline_duration: 2
     bspline_waypoint_height: 0.4
-    bspline_task_stiffness: 100
-    bspline_task_damping: 20
+    bspline_task_stiffness: 700
+    bspline_task_damping: 40
     bspline_dimweight_tx: 1
     bspline_dimweight_ty: 1
     bspline_dimweight_tz: 1
@@ -217,7 +218,8 @@ ObserverPipelines:
   observers:
   - type: Encoder # Joint state (q, q̇)
     config:
-      velocity: encoderVelocities
+      position: encoderValues  # use real joint positions  (to prevent drift)
+      velocity: encoderVelocities           
   # - type: Attitude # Orientation (R) from imu data
   #   update: false
   # - type: KinematicInertial #Full 6D Pose (R, p) & Velocity from imu data and using the foot frame
@@ -229,26 +231,26 @@ ObserverPipelines:
     update: true
     config:
       bodySensor: FloatingBase
-  - type: Tilt # Full 6D Pose (R, p) & Velocity nonlinear observer used for walking
-    required: false
-    update: false
-    config:
-      leggedOdometry:
-        kappa: 10
-        lambdaInf: 0.001
-        correctContacts: true
-        odometryType: Flat
-      filterGains:
-        initAlpha: 100
-        initBeta: 1
-        initGamma: 2
-        finalAlpha: 100
-        finalBeta: 1
-        finalGamma: 2
-      contacts:
-        contactsDetection: Surfaces
-        surfacesForContactDetection:
-        - RightFootCenter
-        - LeftFootCenter
-        schmittTriggerLowerPropThreshold: 0.15
-        schmittTriggerUpperPropThreshold: 0.30
+  # - type: Tilt # Full 6D Pose (R, p) & Velocity nonlinear observer used for walking
+  #   required: false
+  #   update: false
+  #   config:
+  #     leggedOdometry:
+  #       kappa: 10
+  #       lambdaInf: 0.001
+  #       correctContacts: true
+  #       odometryType: Flat
+  #     filterGains:
+  #       initAlpha: 100
+  #       initBeta: 1
+  #       initGamma: 2
+  #       finalAlpha: 100
+  #       finalBeta: 1
+  #       finalGamma: 2
+  #     contacts:
+  #       contactsDetection: Surfaces
+  #       surfacesForContactDetection:
+  #       - RightFootCenter
+  #       - LeftFootCenter
+  #       schmittTriggerLowerPropThreshold: 0.15
+  #       schmittTriggerUpperPropThreshold: 0.30

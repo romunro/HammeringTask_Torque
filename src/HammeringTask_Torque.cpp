@@ -56,11 +56,36 @@ HammeringTask_Torque::HammeringTask_Torque(mc_rbdyn::RobotModulePtr rm, double d
   ext_wrench_conf.modifyZMPErr = true;
   stabilizerTask->externalWrenchConfiguration(ext_wrench_conf);
 
+  double fc = params_.impulse.filter_cutoff_frequency > 0.0 ? params_.impulse.filter_cutoff_frequency : 5.0;
+  filter_cutoff_period_ = 1.0 / (2.0 * M_PI * fc);
+  qd_filter_ = mc_filter::LowPass<Eigen::VectorXd>(solver().dt(), filter_cutoff_period_);
+  qdm_filter_ = mc_filter::LowPass<Eigen::VectorXd>(solver().dt(), filter_cutoff_period_);
+  tau_imp_derivate_filter_ = mc_filter::LowPass<Eigen::VectorXd>(solver().dt(), filter_cutoff_period_);
+  tau_imp_derivate_qp_filter_ = mc_filter::LowPass<Eigen::VectorXd>(solver().dt(), filter_cutoff_period_);
+  tau_imp_derivate_act_filter_ = mc_filter::LowPass<Eigen::VectorXd>(solver().dt(), filter_cutoff_period_);
+  tau_imp_derivate_num_filter_ = mc_filter::LowPass<Eigen::VectorXd>(solver().dt(), filter_cutoff_period_);
+
+  qd_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  qdm_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_qp_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_act_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_num_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  mc_rtc::log::info("[HammeringTask_Torque] mc_filter::LowPass initialized: fc = {} Hz, cutoffPeriod = {} s, dt = {} s",
+                    fc, filter_cutoff_period_, solver().dt());
+
   qd_previous = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp = Eigen::VectorXd::Zero(robot().mb().nrDof());
   tau_imp_act = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp_previous = Eigen::VectorXd::Zero(robot().mb().nrDof());
   tau_imp_derivate = Eigen::VectorXd::Zero(robot().mb().nrDof());
-  tau_imp_derivate_low_limit = Eigen::VectorXd::Zero(robot().mb().nrDof());
-  tau_imp_derivate_high_limit = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp_derivate_qp = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp_derivate_act = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp_derivate_num = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp_derivate_low_limit = Eigen::VectorXd::Constant(robot().mb().nrDof(), std::numeric_limits<double>::quiet_NaN());
+  tau_imp_derivate_high_limit = Eigen::VectorXd::Constant(robot().mb().nrDof(), std::numeric_limits<double>::quiet_NaN());
+  tau_imp_true_speed = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  tau_imp_true_force = Eigen::VectorXd::Zero(robot().mb().nrDof());
 
   comparisonRobots_ = mc_rbdyn::loadRobot(robot().module());
 
@@ -119,101 +144,114 @@ bool HammeringTask_Torque::run()
 
   P_n = Eigen::Matrix<double, 6, 6>::Zero();
   P_n.block<3, 3>(3, 3) = P_n_sub;
-  Eigen::VectorXd q_d = tvm::dot(robot().tvmRobot().q(), 1)->value();
+  qd_filter_.update(tvm::dot(robot().tvmRobot().q(), 1)->value());
+  const Eigen::VectorXd & q_d = qd_filter_.eval();
   Eigen::VectorXd q_dd = tvm::dot(robot().tvmRobot().q(), 2)->value();
 
-  qd = robot().encoderVelocities();
+  auto current_vel = robot().encoderVelocities();
   qdm = Eigen::VectorXd::Zero(robot().mb().nrDof());
+  qdm(0) = 0.0;
+  qdm(1) = 0.0;
+  qdm(2) = 0.0;
+  qdm(3) = 0.0;
+  qdm(4) = 0.0;
+  qdm(5) = 0.0;
+  qdm(6) = current_vel.at(6);//LCY
+  qdm(7) = current_vel.at(7);//LCR
+  qdm(8) = current_vel.at(8);//LCP
+  qdm(9) = current_vel.at(9);//LKP
+  qdm(10) = current_vel.at(10);//LAP
+  qdm(11) = current_vel.at(11);//LAR
+  qdm(12) = current_vel.at(0);//RCY
+  qdm(13) = current_vel.at(1);//RCR
+  qdm(14) = current_vel.at(2);//RCP
+  qdm(15) = current_vel.at(3);//RKP
+  qdm(16) = current_vel.at(4);//RAP
+  qdm(17) = current_vel.at(5);//RAR
+  qdm(18) = current_vel.at(12);//WP
+  qdm(19) = current_vel.at(13);//WR
+  qdm(20) = current_vel.at(14);//WY
+  qdm(21) = current_vel.at(15);//HY
+  qdm(22) = current_vel.at(16);//HP
+  qdm(23) = current_vel.at(35);//LSC
+  qdm(24) = current_vel.at(36);//LSP
+  qdm(25) = current_vel.at(37);//LSR
+  qdm(26) = current_vel.at(38);//LSY
+  qdm(27) = current_vel.at(39);//LEP
+  qdm(28) = current_vel.at(40);//LWRY
+  qdm(29) = current_vel.at(41);//LWRR
+  qdm(30) = current_vel.at(42);//LWRP
+  qdm(31) = current_vel.at(43);//LHDY
+  qdm(32) = current_vel.at(17);//RSC
+  qdm(33) = current_vel.at(18);//RSP
+  qdm(34) = current_vel.at(19);//RSR
+  qdm(35) = current_vel.at(20);//RSY
+  qdm(36) = current_vel.at(21);//REP
+  qdm(37) = current_vel.at(22);//RWRY
+  qdm(38) = current_vel.at(23);//RWRR
+  qdm(39) = current_vel.at(24);//RWRP
+  qdm(40) = current_vel.at(25);//RHDY
 
-  if(qd.size() >= 44)
-  {
-    qdm(0) = 0.0; qdm(1) = 0.0; qdm(2) = 0.0; qdm(3) = 0.0; qdm(4) = 0.0; qdm(5) = 0.0;
-    qdm(6) = qd.at(6);   // LCY
-    qdm(7) = qd.at(7);   // LCR
-    qdm(8) = qd.at(8);   // LCP
-    qdm(9) = qd.at(9);   // LKP
-    qdm(10) = qd.at(10); // LAP
-    qdm(11) = qd.at(11); // LAR
-    qdm(12) = qd.at(0);  // RCY
-    qdm(13) = qd.at(1);  // RCR
-    qdm(14) = qd.at(2);  // RCP
-    qdm(15) = qd.at(3);  // RKP
-    qdm(16) = qd.at(4);  // RAP
-    qdm(17) = qd.at(5);  // RAR
-    qdm(18) = qd.at(12); // WP
-    qdm(19) = qd.at(13); // WR
-    qdm(20) = qd.at(14); // WY
-    qdm(21) = qd.at(15); // HY
-    qdm(22) = qd.at(16); // HP
-    qdm(23) = qd.at(17); // LSC
-    qdm(24) = qd.at(18); // LSP
-    qdm(25) = qd.at(19); // LSR
-    qdm(26) = qd.at(20); // LSY
-    qdm(27) = qd.at(21); // LEP
-    qdm(28) = qd.at(22); // LWRY
-    qdm(29) = qd.at(23); // LWRR
-    qdm(30) = qd.at(24); // LWRP
-    qdm(31) = qd.at(25); // LHDY
-    qdm(32) = qd.at(26); // RSC
-    qdm(33) = qd.at(27); // RSP
-    qdm(34) = qd.at(28); // RSR
-    qdm(35) = qd.at(29); // RSY
-    qdm(36) = qd.at(30); // REP
-    qdm(37) = qd.at(31); // RWRY
-    qdm(38) = qd.at(32); // RWRR
-    qdm(39) = qd.at(33); // RWRP
-    qdm(40) = qd.at(34); // RHDY
-  }
+  qdm_filter_.update(qdm);
+  const Eigen::VectorXd & qdm_filtered = qdm_filter_.eval();
 
   effective_mass = compute_effective_mass_with_mbc(robot().mbc(), *this, nail_normal_vector_world_frame);
   effective_mass_d = compute_effective_mass_d_with_mbc(robot().mbc(), *this, nail_normal_vector_world_frame, effective_mass);
-  tau_imp_true_speed = (J_.transpose() * effective_mass * P_n * J_) * solver().dt();
+  double dt_param = params_.impulse.delta_t > 0.0 ? params_.impulse.delta_t : 0.001;
+  double c_res_param = params_.impulse.c_res;
+
+  tau_imp_true_speed = (-1.0f * (c_res_param + 1.0) / dt_param) * J_.transpose() * effective_mass * P_n * J_ * qdm_filtered;
 
   Eigen::Matrix3d R = Eigen::AngleAxisd(-M_PI / 4.0, Eigen::Vector3d::UnitX()).toRotationMatrix();
   tau_imp_true_force = J_Larm_sensor_.transpose() * P_n_sub * (R * robot().forceSensor("LeftHandForceSensor").force());
 
-  double dt_param = params_.impulse.delta_t > 0.0 ? params_.impulse.delta_t : 0.001;
-  double c_res_param = params_.impulse.c_res;
+  // Floating base DOFs (0..5) are unactuated and do not contribute to joint impulsive torques
+  Eigen::VectorXd q_d_arm = q_d;
+  q_d_arm.head<6>().setZero();
+  Eigen::VectorXd q_dd_arm = q_dd;
+  q_dd_arm.head<6>().setZero();
 
-  tau_imp = (-1.0f * (c_res_param + 1.0) / dt_param) * J_.transpose() * effective_mass * P_n * J_ * q_d;
-  tau_imp_act = (-1.0f * (c_res_param + 1.0) / dt_param) * J_.transpose() * effective_mass * P_n * J_ * qdm;
-  tau_imp_derivate = -(c_res_param + 1.0) / dt_param * ((J_d.transpose() * effective_mass * P_n * J_
+  tau_imp = (-1.0f * (c_res_param + 1.0) / dt_param) * J_.transpose() * effective_mass * P_n * J_ * q_d_arm;
+  tau_imp_act = (-1.0f * (c_res_param + 1.0) / dt_param) * J_.transpose() * effective_mass * P_n * J_ * qdm_filtered;
+
+  Eigen::VectorXd raw_tau_imp_derivate_qp = -(c_res_param + 1.0) / dt_param * ((J_d.transpose() * effective_mass * P_n * J_
       + J_.transpose() * effective_mass_d * P_n * J_
-      + J_.transpose() * effective_mass * P_n * J_d) * q_d
-      + (J_.transpose() * effective_mass * P_n * J_) * q_dd);
-  tau_imp_derivate_num = (tau_imp_act - tau_imp_previous) / solver().dt();
+      + J_.transpose() * effective_mass * P_n * J_d) * q_d_arm
+      + (J_.transpose() * effective_mass * P_n * J_) * q_dd_arm);
+  tau_imp_derivate_qp_filter_.update(raw_tau_imp_derivate_qp);
+  tau_imp_derivate_qp = tau_imp_derivate_qp_filter_.eval();
+  tau_imp_derivate = tau_imp_derivate_qp;
+
+  Eigen::VectorXd qdm_d = (qdm_filtered - qd_previous) / solver().dt();
+  Eigen::VectorXd raw_tau_imp_derivate_act = -(c_res_param + 1.0) / dt_param * ((J_d.transpose() * effective_mass * P_n * J_
+      + J_.transpose() * effective_mass_d * P_n * J_
+      + J_.transpose() * effective_mass * P_n * J_d) * qdm_filtered
+      + (J_.transpose() * effective_mass * P_n * J_) * qdm_d);
+  tau_imp_derivate_act_filter_.update(raw_tau_imp_derivate_act);
+  tau_imp_derivate_act = tau_imp_derivate_act_filter_.eval();
+
+  Eigen::VectorXd raw_tau_imp_derivate_num = (tau_imp_act - tau_imp_previous) / solver().dt();
+  tau_imp_derivate_num_filter_.update(raw_tau_imp_derivate_num);
+  tau_imp_derivate_num = tau_imp_derivate_num_filter_.eval();
   tau_imp_previous = tau_imp_act;
 
   end_effector_velocity = linear_jacobian * q_d;
 
-  if(impulseConstraint)
+  if(impulseConstraint && impulsive_constraint_flag && impulseConstraint->EffectiveLambda().size() == robot().mb().nrDof())
   {
-    double cur_dist = (robot().frame(params_.hammer_head_frame).position().translation() -
-                       robot(params_.nail_robot_name).frame(params_.nail_frame).position().translation()).norm();
-    if(cur_dist < params_.impulse.activation_height)
-    {
-      double denom = params_.impulse.activation_height * (1.0 - params_.impulse.K);
-      if(std::abs(denom) > 1e-6)
-      {
-        tau_imp_derivate_low_limit = (robot().tvmRobot().limits().tl - tau_imp_act) * impulseConstraint->EffectiveLambda()
-            - robot().tvmRobot().limits().tl * (1.0 - params_.impulse.tau_high_multiplier) / denom * linear_jacobian * q_d;
-        tau_imp_derivate_high_limit = (robot().tvmRobot().limits().tu - tau_imp_act) * impulseConstraint->EffectiveLambda()
-            - robot().tvmRobot().limits().tu * (1.0 - params_.impulse.tau_high_multiplier) / denom * linear_jacobian * q_d;
-      }
-    }
-    else
-    {
-      tau_imp_derivate_low_limit = (robot().tvmRobot().limits().tl - tau_imp_act) * impulseConstraint->EffectiveLambda();
-      tau_imp_derivate_high_limit = (robot().tvmRobot().limits().tu - tau_imp_act) * impulseConstraint->EffectiveLambda();
-    }
+    tau_imp = impulseConstraint->TorquePrediction();
+    tau_imp_derivate_low_limit = impulseConstraint->RightSideLower();
+    tau_imp_derivate_high_limit = impulseConstraint->RightSideUpper();
+    tau_imp_derivate_qp = impulseConstraint->DerivativeQP();
   }
   else
   {
-    tau_imp_derivate_low_limit = robot().tvmRobot().limits().tl * params_.impulse.limit_multiplier;
-    tau_imp_derivate_high_limit = robot().tvmRobot().limits().tu * params_.impulse.limit_multiplier;
+    tau_imp_derivate_low_limit.setConstant(std::numeric_limits<double>::quiet_NaN());
+    tau_imp_derivate_high_limit.setConstant(std::numeric_limits<double>::quiet_NaN());
   }
+  tau_imp_derivate = tau_imp_derivate_qp;
 
-  qd_previous = qdm;
+  qd_previous = qdm_filtered;
   total_time_elapsed += solver().dt();
   plot_timer_ += solver().dt();
   if(plot_timer_ >= params_.plot_dt)
@@ -241,6 +279,27 @@ void HammeringTask_Torque::reset(const mc_control::ControllerResetData & reset_d
   impact_detected = false;
   bspline_active_ = false;
   params_.impulse.activation_height = 0.0;
+
+  qd_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  qdm_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_qp_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_act_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  tau_imp_derivate_num_filter_.reset(Eigen::VectorXd::Zero(robot().mb().nrDof()));
+  if(tau_imp_previous.size() == robot().mb().nrDof())
+  {
+    tau_imp.setZero();
+    tau_imp_act.setZero();
+    tau_imp_previous.setZero();
+    tau_imp_derivate.setZero();
+    tau_imp_derivate_qp.setZero();
+    tau_imp_derivate_act.setZero();
+    tau_imp_derivate_num.setZero();
+    tau_imp_derivate_low_limit.setConstant(std::numeric_limits<double>::quiet_NaN());
+    tau_imp_derivate_high_limit.setConstant(std::numeric_limits<double>::quiet_NaN());
+    tau_imp_true_speed.setZero();
+    tau_imp_true_force.setZero();
+  }
 
   if(impulseConstraint)
   {

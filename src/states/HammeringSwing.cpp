@@ -121,6 +121,7 @@ void HammeringSwing::start(mc_control::fsm::Controller & ctl_)
         ctl.params_.impulse.limit_multiplier, ctl.logger());
     mc_rtc::log::info("[HammeringSwing] Constant impulsive torque constraint created.");
   }
+  ctl.impulseConstraint->filterCutoffPeriod(ctl.filter_cutoff_period_);
 
   add_logs(ctl_);
 }
