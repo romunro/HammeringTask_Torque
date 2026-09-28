@@ -62,13 +62,13 @@ global_controller_params:
     nail: nail
   impact_detection:
     nail_impact_force_threshold: 100
-    sensor_impact_force_threshold: 250
-    max_number_of_hits: 1
+    sensor_impact_force_threshold: 100
+    max_number_of_hits: 5
   hitting_constraint_paramater:
     c_res: 1   
     delta_t: 0.001
-    lambda_high: 60
-    lambda_low: 25
+    lambda_high: 200
+    lambda_low: 120
     impulsive_tau_limit_multiplier: 1
     damping:
     - 0.1
@@ -76,8 +76,8 @@ global_controller_params:
     - 0.5
     velocity_percentage: 0.9
     Activation_height: 0
-    tau_high_mulitplier: 1.5
-    K: 0.5
+    tau_high_mulitplier: 4
+    K: 0.8
     infTorque: true
     filter_cutoff_frequency: 5.0
   hitting_tasks_paramater:
