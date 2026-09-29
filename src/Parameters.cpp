@@ -25,6 +25,28 @@ void ControllerParams::load(const mc_rtc::Configuration & config)
     if(qol.has("jacobian_verbose_active")) qol("jacobian_verbose_active", jacobian_verbose);
   }
 
+  if(gp.has("friction"))
+  {
+    auto f = gp("friction");
+    if(f.has("enable")) f("enable", friction.enable);
+    if(f.has("tau_c")) f("tau_c", friction.tau_c);
+    if(f.has("f_v")) f("f_v", friction.f_v);
+    if(f.has("v_th")) f("v_th", friction.v_th);
+    if(f.has("use_ref_vel")) f("use_ref_vel", friction.use_ref_vel);
+    if(f.has("joints")) f("joints", friction.joints);
+  }
+
+  if(gp.has("enable_friction_compensation"))
+  {
+    gp("enable_friction_compensation", enable_friction_compensation);
+    friction.enable = enable_friction_compensation;
+  }
+  if(gp.has("enable_joint_friction_compensation"))
+  {
+    gp("enable_joint_friction_compensation", enable_friction_compensation);
+    friction.enable = enable_friction_compensation;
+  }
+
   if(gp.has("gui"))
   {
     auto g = gp("gui");
@@ -272,4 +294,6 @@ void HammeringTask_Torque::apply_parameters()
       mc_rtc::log::info("[HammeringTask_Torque] Applied CoM height target: {}", params_.stabilizer.com_height);
     }
   }
+
+  enable_friction_compensation_ = params_.friction.enable;
 }

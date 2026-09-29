@@ -49,6 +49,13 @@ hrp5_p:
 
 global_controller_params:
   timestep: 0.005
+  friction:
+    enable: true
+    tau_c: 0.2
+    f_v: 0.0
+    v_th: 0.04
+    use_ref_vel: true
+    joints: []
   gui:
     stop_hammering_button_name: Stop hammering
     linear_constraint_button_name: Linear constraint activation

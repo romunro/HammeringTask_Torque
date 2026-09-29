@@ -24,6 +24,8 @@ typedef Eigen::Vector3d Point;
 typedef Point point_t;
 typedef ndcurves::curve_constraints<point_t> curve_constraints_t;
 
+#include <Tasks/QPTasks.h>
+
 struct HammeringTask_Torque_DLLAPI HammeringTask_Torque : public mc_control::fsm::Controller
 {
 public:
@@ -143,4 +145,9 @@ public:
 
   double plot_timer_ = 0.0;
   bool should_plot_tick_ = false;
+
+  // Joint friction model & compensation
+  bool enable_friction_compensation_ = false;
+  std::vector<double> sim_friction_torques_;
+  std::vector<double> joint_friction_torques_;
 };

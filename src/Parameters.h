@@ -94,6 +94,16 @@ struct ImpactDetectionParams
   int max_hits = 1;
 };
 
+struct FrictionParams
+{
+  bool enable = false;
+  double tau_c = 0.5;   // Coulomb friction torque [Nm]
+  double f_v = 0.0;     // Viscous friction coefficient [Nm/(rad/s)]
+  double v_th = 0.02;   // Velocity smoothing threshold [rad/s]
+  bool use_ref_vel = true; // Use reference/controller velocity (pure feedforward)
+  std::vector<std::string> joints; // Joints to compensate (empty = all)
+};
+
 struct ControllerParams
 {
   std::string control_mode = "Torque";
@@ -110,6 +120,7 @@ struct ControllerParams
 
   bool bezier_curve_verbose = false;
   bool jacobian_verbose = false;
+  bool enable_friction_compensation = false;
 
   StabilizerParams stabilizer;
   PostureParams posture;
@@ -117,6 +128,7 @@ struct ControllerParams
   VectorOrientationParams vector_orientation;
   ImpulseParams impulse;
   ImpactDetectionParams impact;
+  FrictionParams friction;
 
   void load(const mc_rtc::Configuration & config);
 };

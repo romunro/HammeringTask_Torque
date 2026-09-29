@@ -118,6 +118,24 @@ void HammeringTask_Torque::addToGUI()
     return (tau_imp_act.size() > dof) ? tau_imp_act(dof) : 0.0;
   };
 
+  this->gui()->addElement({"Hammering task", "Friction Compensation"},
+    mc_rtc::gui::Checkbox("Enable Friction Compensation",
+      [this]() { return enable_friction_compensation_; },
+      [this]() { enable_friction_compensation_ = !enable_friction_compensation_; }),
+    mc_rtc::gui::NumberInput("Coulomb Friction tau_c [Nm]",
+      [this]() { return params_.friction.tau_c; },
+      [this](double v) { params_.friction.tau_c = std::max(0.0, v); }),
+    mc_rtc::gui::NumberInput("Viscous Friction f_v [Nm/(rad/s)]",
+      [this]() { return params_.friction.f_v; },
+      [this](double v) { params_.friction.f_v = std::max(0.0, v); }),
+    mc_rtc::gui::NumberInput("Velocity Threshold v_th [rad/s]",
+      [this]() { return params_.friction.v_th; },
+      [this](double v) { params_.friction.v_th = std::max(1e-4, v); }),
+    mc_rtc::gui::Checkbox("Use Reference Velocity (Feedforward)",
+      [this]() { return params_.friction.use_ref_vel; },
+      [this]() { params_.friction.use_ref_vel = !params_.friction.use_ref_vel; })
+  );
+
   this->gui()->addElement({"Plots"},
     mc_rtc::gui::ComboInput("Joint Selection",
       mass_maximization_active_joints,

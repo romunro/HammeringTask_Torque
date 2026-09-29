@@ -227,8 +227,42 @@ void HammeringTask_Torque::add_logs()
       }
       return 1.0;
     });
+
+    // 7. Joint Friction Torque (simulation friction & feedforward compensation)
+    std::string p_friction = fmt::format("JointFriction_{:02d}_{}", dof, jname);
+    logger().addLogEntry(p_friction, this, [this, jname]() {
+      for(size_t k = 0; k < robot().refJointOrder().size() && k < sim_friction_torques_.size(); ++k)
+      {
+        if(robot().refJointOrder()[k] == jname)
+        {
+          return sim_friction_torques_[k];
+        }
+      }
+      return 0.0;
+    });
+    logger().addLogEntry(p_friction + "_sim", this, [this, jname]() {
+      for(size_t k = 0; k < robot().refJointOrder().size() && k < sim_friction_torques_.size(); ++k)
+      {
+        if(robot().refJointOrder()[k] == jname)
+        {
+          return sim_friction_torques_[k];
+        }
+      }
+      return 0.0;
+    });
+    logger().addLogEntry(p_friction + "_comp", this, [this, jname]() {
+      for(size_t k = 0; k < robot().refJointOrder().size() && k < joint_friction_torques_.size(); ++k)
+      {
+        if(robot().refJointOrder()[k] == jname)
+        {
+          return joint_friction_torques_[k];
+        }
+      }
+      return 0.0;
+    });
   }
 
+  logger().addLogEntry("friction_compensation_enabled", this, [this]() { return enable_friction_compensation_; });
   logger().addLogEntry("com_eval_norm", this, [&, this]() { return com_eval_norm; });
   logger().addLogEntry("pelvis_eval_norm", this, [&, this]() { return pelvis_eval_norm; });
   logger().addLogEntry("torso_eval_norm", this, [&, this]() { return torso_eval_norm; });

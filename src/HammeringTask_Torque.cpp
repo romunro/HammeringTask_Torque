@@ -3,6 +3,8 @@
 #include <RBDyn/Jacobian.h>
 #include <mc_solver/DynamicsConstraint.h>
 #include <mc_solver/ContactConstraint.h>
+#include <cmath>
+#include <algorithm>
 
 HammeringTask_Torque::HammeringTask_Torque(mc_rbdyn::RobotModulePtr rm, double dt, const mc_rtc::Configuration & config)
 : mc_control::fsm::Controller(rm, dt, config, Backend::TVM),
@@ -88,6 +90,9 @@ HammeringTask_Torque::HammeringTask_Torque(mc_rbdyn::RobotModulePtr rm, double d
   tau_imp_true_force = Eigen::VectorXd::Zero(robot().mb().nrDof());
 
   comparisonRobots_ = mc_rbdyn::loadRobot(robot().module());
+
+  sim_friction_torques_.assign(robot().refJointOrder().size(), 0.0);
+  joint_friction_torques_.assign(robot().refJointOrder().size(), 0.0);
 
   add_logs();
   addToGUI();
@@ -264,7 +269,80 @@ bool HammeringTask_Torque::run()
     should_plot_tick_ = false;
   }
 
-  return mc_control::fsm::Controller::run(mc_solver::FeedbackType::ClosedLoopIntegrateReal);
+  bool ret = mc_control::fsm::Controller::run(mc_solver::FeedbackType::ClosedLoopIntegrateReal);
+  if(!ret) return false;
+
+  // 1. Retrieve simulation friction torque added to each joint
+  if(datastore().has(robot().name() + "::GetSimFrictionTorques"))
+  {
+    const auto & sim_fric = datastore().call<const std::vector<double> &>(robot().name() + "::GetSimFrictionTorques");
+    if(sim_fric.size() == sim_friction_torques_.size())
+    {
+      sim_friction_torques_ = sim_fric;
+    }
+  }
+
+  // 2. Smooth feedforward friction model & compensation:
+  // tau_fric = tau_c * tanh(vel / v_th) + f_v * vel
+  for(size_t i = 0; i < robot().refJointOrder().size(); ++i)
+  {
+    const auto & jname = robot().refJointOrder()[i];
+    if(!robot().hasJoint(jname)) continue;
+    auto jIndex = robot().jointIndexByName(jname);
+    if(robot().mbc().jointTorque.size() <= jIndex || robot().mbc().jointTorque[jIndex].empty()) continue;
+
+    // Check if joint filtering is active
+    if(!params_.friction.joints.empty())
+    {
+      if(std::find(params_.friction.joints.begin(), params_.friction.joints.end(), jname) == params_.friction.joints.end())
+      {
+        if(i < joint_friction_torques_.size()) joint_friction_torques_[i] = 0.0;
+        continue;
+      }
+    }
+
+    double vel = 0.0;
+    if(params_.friction.use_ref_vel)
+    {
+      if(robot().mbc().alpha.size() > jIndex && !robot().mbc().alpha[jIndex].empty())
+      {
+        vel = robot().mbc().alpha[jIndex][0];
+      }
+    }
+    else
+    {
+      if(realRobot().mbc().alpha.size() > jIndex && !realRobot().mbc().alpha[jIndex].empty())
+      {
+        vel = realRobot().mbc().alpha[jIndex][0];
+      }
+    }
+
+    double v_th = params_.friction.v_th > 1e-6 ? params_.friction.v_th : 1e-6;
+    double tau_coulomb = params_.friction.tau_c * std::tanh(vel / v_th);
+    double tau_viscous = params_.friction.f_v * vel;
+    double Tf = tau_coulomb + tau_viscous;
+
+    if(i < joint_friction_torques_.size())
+    {
+      joint_friction_torques_[i] = Tf;
+    }
+
+    if(enable_friction_compensation_)
+    {
+      double tau_cmd = robot().mbc().jointTorque[jIndex][0] + Tf;
+      // Safety clamp to robot joint torque limits
+      auto dof = robot().mb().jointPosInDof(jIndex);
+      if(robot().tvmRobot().limits().tl.size() > dof && robot().tvmRobot().limits().tu.size() > dof)
+      {
+        double tl = robot().tvmRobot().limits().tl(dof);
+        double tu = robot().tvmRobot().limits().tu(dof);
+        tau_cmd = std::clamp(tau_cmd, tl, tu);
+      }
+      robot().mbc().jointTorque[jIndex][0] = tau_cmd;
+    }
+  }
+
+  return true;
 }
 
 void HammeringTask_Torque::reset(const mc_control::ControllerResetData & reset_data)
@@ -311,6 +389,9 @@ void HammeringTask_Torque::reset(const mc_control::ControllerResetData & reset_d
   mc_control::fsm::Controller::reset(reset_data);
   stabilizerTask->reset();
   apply_parameters();
+
+  joint_friction_torques_.assign(robot().refJointOrder().size(), 0.0);
+  sim_friction_torques_.assign(robot().refJointOrder().size(), 0.0);
 
   addContact({robot().name(), "ground", "LeftFoot", "AllGround"});
   addContact({robot().name(), "ground", "RightFoot", "AllGround"});
