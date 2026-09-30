@@ -160,6 +160,28 @@ bool HammeringSwing::run(mc_control::fsm::Controller & ctl_)
   ctl.vector_orientation_error = vector_error(-ctl.nail_normal_vector_world_frame,
                                               (current_rot.transpose() * ctl.normal_vector_to_align_in_hammerhead_frame).normalized());
 
+  // ------------------------- Effective mass maximization task update ----------------------------
+  // See Jimmy paper to understand why we use posture task
+
+  int number_of_joints = ctl.robot().tvmRobot().qJoints()->size();
+
+  Eigen::MatrixXd joint_selector = Eigen::MatrixXd::Zero(number_of_joints, number_of_joints);
+  for(const auto & joint: mass_maximization_active_joints)
+  {
+    auto joint_index = jointIndex(joint);
+    if(joint_index >= 0 && joint_index < number_of_joints)
+    {
+      joint_selector(joint_index, joint_index) = 1.0;
+    }
+  }
+
+  _new_mbc = ctl.robot().mbc();
+  _gradient_of_m = compute_emass_gradient_backward_difference_mbc(_new_mbc, ctl, ctl.nail_normal_vector_world_frame, mass_maximization_active_joints);
+
+  double arm_weight = ctl.params_.posture.arm_nullspace_weight > 1e-6 ? ctl.params_.posture.arm_nullspace_weight : 0.01;
+  Eigen::VectorXd feedforward_term = (ctl.params_.trajectory.effective_mass_maximization_weight / arm_weight) * joint_selector * _gradient_of_m.tail(number_of_joints);
+  ctl.getPostureTask(ctl.robot().name())->refAccel(feedforward_term);
+  
   // Impact detection
   double hand_force = ctl.robot().forceSensor("LeftHandForceSensor").force().norm();
   ctl.impact_detected = (hand_force >= ctl.params_.impact.sensor_force_threshold);
@@ -259,6 +281,60 @@ void HammeringSwing::rm_logs(mc_control::fsm::Controller & ctl_)
   auto & ctl = static_cast<HammeringTask_Torque &>(ctl_);
   ctl.logger().removeLogEntry("HammeringSwing_eval");
   ctl.logger().removeLogEntry("HammeringSwing_time");
+}
+
+const double HammeringSwing::compute_effective_mass_with_mbc(
+    rbd::MultiBodyConfig mbc,
+    mc_control::fsm::Controller &ctl_,
+    const Eigen::Vector3d &normal_vector) const
+{
+    HammeringTask_Torque &ctl = static_cast<HammeringTask_Torque &>(ctl_);
+    ctl.robot().forwardKinematics(mbc);
+    const rbd::MultiBody &robot_mb = ctl.robot().mb();
+    rbd::Jacobian jac(robot_mb, ctl.params_.hammer_head_frame);
+    const Eigen::MatrixXd world_jacobian = jac.jacobian(robot_mb, mbc);
+    Eigen::MatrixXd full_jacobian(6, robot_mb.nrDof());
+    jac.fullJacobian(robot_mb, world_jacobian, full_jacobian);
+    const Eigen::MatrixXd Jv = full_jacobian.bottomRows(3);
+    rbd::ForwardDynamics fd(robot_mb);
+    fd.computeH(robot_mb, mbc);
+    const Eigen::MatrixXd &M = fd.H();
+    const Eigen::VectorXd JvT_n = Jv.transpose() * normal_vector;
+    const Eigen::VectorXd x = M.ldlt().solve(JvT_n);
+    const double denominator = JvT_n.dot(x);
+    if(std::abs(denominator) < 1e-12)
+    {
+        return 0.0;
+    }
+    return 1.0 / denominator;
+}
+
+Eigen::VectorXd HammeringSwing::compute_emass_gradient_backward_difference_mbc(
+    const rbd::MultiBodyConfig &mbc,
+    mc_control::fsm::Controller &ctl_,
+    const Eigen::Vector3d &normal_vector,
+    const std::vector<std::string> &active_joints) const
+{
+    HammeringTask_Torque &ctl = static_cast<HammeringTask_Torque &>(ctl_);
+    const rbd::MultiBody &robot_mb = ctl.robot().mb();
+    constexpr double epsilon = 1e-5;
+    
+    Eigen::VectorXd gradient = Eigen::VectorXd::Zero(robot_mb.nrDof());
+    const double effective_mass_current = compute_effective_mass_with_mbc(mbc, ctl_, normal_vector);
+
+    for(const auto &joint_name : active_joints)
+    {
+        const unsigned int joint_mb_index = robot_mb.jointIndexByName(joint_name);
+        const int dof_index = robot_mb.jointPosInDof(joint_mb_index);
+
+        rbd::MultiBodyConfig mbc_minus = mbc;
+        mbc_minus.q[joint_mb_index][0] -= epsilon;
+
+        const double effective_mass_minus = compute_effective_mass_with_mbc(mbc_minus, ctl_, normal_vector);
+
+        gradient(dof_index) = (effective_mass_current - effective_mass_minus) / epsilon;
+    }
+    return gradient;
 }
 
 EXPORT_SINGLE_STATE("HammeringSwing", HammeringSwing)

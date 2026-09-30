@@ -27,7 +27,7 @@ robots:
       translation:
       - 0.4
       - 0.4
-      - 0.9
+      - 0.7
       rotation:
       - 0
       - 0
@@ -74,8 +74,8 @@ global_controller_params:
   hitting_constraint_paramater:
     c_res: 1   
     delta_t: 0.001
-    lambda_high: 200
-    lambda_low: 120
+    lambda_high: 450
+    lambda_low: 350
     impulsive_tau_limit_multiplier: 1
     damping:
     - 0.1
@@ -84,15 +84,15 @@ global_controller_params:
     velocity_percentage: 0.9
     Activation_height: 0
     tau_high_mulitplier: 4
-    K: 0.8
+    K: 0.5
     infTorque: true
     filter_cutoff_frequency: 5.0
   hitting_tasks_paramater:
-    bspline_task_weight: 2000
+    bspline_task_weight: 500
     bspline_duration: 2
     bspline_waypoint_height: 0.4
-    bspline_task_stiffness: 700
-    bspline_task_damping: 40
+    bspline_task_stiffness: 500
+    bspline_task_damping: 150
     bspline_dimweight_tx: 1
     bspline_dimweight_ty: 1
     bspline_dimweight_tz: 1

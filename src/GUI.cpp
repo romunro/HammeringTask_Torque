@@ -136,6 +136,22 @@ void HammeringTask_Torque::addToGUI()
       [this]() { params_.friction.use_ref_vel = !params_.friction.use_ref_vel; })
   );
 
+  // 5. Mass Maximization configuration & telemetry
+  this->gui()->addElement({"Hammering task", "Mass Maximization"},
+    mc_rtc::gui::NumberInput("Effective Mass Maximization Weight",
+      [this]() { return params_.trajectory.effective_mass_maximization_weight; },
+      [this](double w) { params_.trajectory.effective_mass_maximization_weight = std::max(0.0, w); }),
+    mc_rtc::gui::NumberInput("Arm Nullspace Weight",
+      [this]() { return params_.posture.arm_nullspace_weight; },
+      [this](double w) { params_.posture.arm_nullspace_weight = std::max(1e-4, w); }),
+    mc_rtc::gui::Label("Effective Mass [kg]",
+      [this]() { return effective_mass; }),
+    mc_rtc::gui::Label("Effective Mass Derivative [kg/s]",
+      [this]() { return effective_mass_d; }),
+    mc_rtc::gui::Label("Projected Momentum [kg.m/s]",
+      [this]() { return projected_momentum_of_hammer_tip; })
+  );
+
   this->gui()->addElement({"Plots"},
     mc_rtc::gui::ComboInput("Joint Selection",
       mass_maximization_active_joints,
@@ -153,5 +169,12 @@ void HammeringTask_Torque::addToGUI()
     mc_rtc::gui::plot::Y("Upper Limit", [this, get_plot_upper]() { return get_plot_upper(this->get_dof(selected_plot_joint_)); }, Color::Red, Style::Dotted),
     mc_rtc::gui::plot::Y("Predicted Impulsive Torque", [this, get_plot_out]() { return get_plot_out(this->get_dof(selected_plot_joint_)); }, Color::Blue, Style::Solid),
     mc_rtc::gui::plot::Y("Lower Limit", [this, get_plot_lower]() { return get_plot_lower(this->get_dof(selected_plot_joint_)); }, Color::Red, Style::Dotted)
+  );
+
+  this->gui()->addPlot("Effective Mass Monitor",
+    mc_rtc::gui::plot::X("t [s]", [this]() { return total_time_elapsed; }),
+    mc_rtc::gui::plot::AxisConfiguration{"Effective Mass [kg]"},
+    mc_rtc::gui::plot::Y("Effective Mass", [this]() { return effective_mass; }, Color::Blue, Style::Solid),
+    mc_rtc::gui::plot::Y("Projected Momentum", [this]() { return projected_momentum_of_hammer_tip; }, Color::Green, Style::Solid)
   );
 }
