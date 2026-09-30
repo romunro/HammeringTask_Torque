@@ -1,6 +1,7 @@
 #include "HammeringSwing.h"
 #include "../HammeringTask_Torque.h"
 #include <mc_rtc/logging.h>
+#include <mc_rbdyn/PlanarSurface.h>
 #include <cmath>
 
 void HammeringSwing::configure(const mc_rtc::Configuration &)
@@ -296,17 +297,137 @@ const double HammeringSwing::compute_effective_mass_with_mbc(
     Eigen::MatrixXd full_jacobian(6, robot_mb.nrDof());
     jac.fullJacobian(robot_mb, world_jacobian, full_jacobian);
     const Eigen::MatrixXd Jv = full_jacobian.bottomRows(3);
+    
     rbd::ForwardDynamics fd(robot_mb);
     fd.computeH(robot_mb, mbc);
     const Eigen::MatrixXd &M = fd.H();
+    auto M_ldlt = M.ldlt();
+
     const Eigen::VectorXd JvT_n = Jv.transpose() * normal_vector;
-    const Eigen::VectorXd x = M.ldlt().solve(JvT_n);
-    const double denominator = JvT_n.dot(x);
-    if(std::abs(denominator) < 1e-12)
+    const Eigen::VectorXd Minv_JvT_n = M_ldlt.solve(JvT_n);
+    
+    double unconstrained_inv_inertia = JvT_n.dot(Minv_JvT_n);
+    
+    // Compute contact jacobians for active contacts dynamically
+    struct ContactInfo {
+        std::string bodyName;
+        double mu;
+        double X_foot;
+        double Y_foot;
+    };
+    std::vector<ContactInfo> active_contacts;
+    
+    for(const auto & contact : ctl.contacts())
+    {
+        std::string r1_name = contact.r1.value_or(ctl.robot().name());
+        std::string r2_name = contact.r2.value_or(ctl.robot().name());
+        
+        std::string surface_name = "";
+        if(r1_name == ctl.robot().name()) {
+            surface_name = contact.r1Surface;
+        } else if(r2_name == ctl.robot().name()) {
+            surface_name = contact.r2Surface;
+        }
+        
+        if(!surface_name.empty() && ctl.robot().hasSurface(surface_name))
+        {
+            const mc_rbdyn::Surface & surf = ctl.robot().surface(surface_name);
+            ContactInfo info;
+            info.bodyName = surf.bodyName();
+            info.mu = contact.friction;
+            info.X_foot = 0.05; // Fallback defaults
+            info.Y_foot = 0.05;
+            
+            const mc_rbdyn::PlanarSurface * ps = dynamic_cast<const mc_rbdyn::PlanarSurface*>(&surf);
+            if(ps)
+            {
+                const auto & pts = ps->planarPoints();
+                if(!pts.empty())
+                {
+                    double min_x = 0, max_x = 0, min_y = 0, max_y = 0;
+                    for(const auto & pt : pts)
+                    {
+                        min_x = std::min(min_x, pt.first);
+                        max_x = std::max(max_x, pt.first);
+                        min_y = std::min(min_y, pt.second);
+                        max_y = std::max(max_y, pt.second);
+                    }
+                    info.X_foot = std::max(std::abs(min_x), std::abs(max_x));
+                    info.Y_foot = std::max(std::abs(min_y), std::abs(max_y));
+                }
+            }
+            active_contacts.push_back(info);
+        }
+    }
+
+    Eigen::MatrixXd Jc(6 * active_contacts.size(), robot_mb.nrDof());
+    Jc.setZero();
+    for(size_t i = 0; i < active_contacts.size(); ++i)
+    {
+        if(ctl.robot().hasBody(active_contacts[i].bodyName))
+        {
+            rbd::Jacobian jac_c(robot_mb, active_contacts[i].bodyName);
+            Eigen::MatrixXd Jc_world = jac_c.jacobian(robot_mb, mbc);
+            Eigen::MatrixXd Jc_full(6, robot_mb.nrDof());
+            jac_c.fullJacobian(robot_mb, Jc_world, Jc_full);
+            Jc.middleRows(i * 6, 6) = Jc_full;
+        }
+    }
+    
+    Eigen::MatrixXd Minv_JcT = Eigen::MatrixXd::Zero(robot_mb.nrDof(), Jc.rows());
+    for(int i = 0; i < Jc.rows(); ++i)
+    {
+        Minv_JcT.col(i) = M_ldlt.solve(Jc.row(i).transpose());
+    }
+    Eigen::MatrixXd Lambda_contact = Jc * Minv_JcT;
+    Lambda_contact.diagonal().array() += 1e-5; // Damping for singularities/overconstraints
+    
+    Eigen::VectorXd v2 = Jc * Minv_JvT_n;
+    
+    // Required impulsive contact reaction if perfectly bolted
+    Eigen::VectorXd p_bolted = -Lambda_contact.ldlt().solve(v2);
+    
+    // Project the bolted impulse onto the exact URDF Unilateral and Friction Cone limits
+    Eigen::VectorXd p_actual = p_bolted;
+    double mu_tau = 0.05; // Constant torsional friction
+    
+    for(size_t i = 0; i < active_contacts.size(); ++i)
+    {
+        int idx = i * 6;
+        double f_z = p_actual(idx + 5);
+        
+        if(f_z <= 0.0)
+        {
+            p_actual.segment<6>(idx).setZero();
+        }
+        else
+        {
+            double f_lat = std::sqrt(p_actual(idx + 3)*p_actual(idx + 3) + p_actual(idx + 4)*p_actual(idx + 4));
+            double mu = active_contacts[i].mu;
+            if(f_lat > mu * f_z)
+            {
+                p_actual(idx + 3) *= (mu * f_z) / f_lat;
+                p_actual(idx + 4) *= (mu * f_z) / f_lat;
+            }
+            
+            double X_limit = active_contacts[i].X_foot * f_z;
+            double Y_limit = active_contacts[i].Y_foot * f_z;
+            p_actual(idx + 0) = std::max(-Y_limit, std::min(p_actual(idx + 0), Y_limit));
+            p_actual(idx + 1) = std::max(-X_limit, std::min(p_actual(idx + 1), X_limit));
+            p_actual(idx + 2) = std::max(-mu_tau * f_z, std::min(p_actual(idx + 2), mu_tau * f_z));
+        }
+    }
+    
+    // Actual unilateral/frictional constrained inverse inertia:
+    // Delta_dot_x = J_v M^-1 J_v^T n + J_v M^-1 J_c^T p_actual
+    // n^T Delta_dot_x = unconstrained_inv_inertia + v2^T p_actual
+    double actual_inv_inertia = unconstrained_inv_inertia + v2.dot(p_actual);
+    
+    if(std::abs(actual_inv_inertia) < 1e-12)
     {
         return 0.0;
     }
-    return 1.0 / denominator;
+    return 1.0 / actual_inv_inertia;
 }
 
 Eigen::VectorXd HammeringSwing::compute_emass_gradient_backward_difference_mbc(
