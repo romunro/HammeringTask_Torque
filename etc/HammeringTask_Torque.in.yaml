@@ -73,7 +73,7 @@ global_controller_params:
     max_number_of_hits: 5
   hitting_constraint_paramater:
     c_res: 1   
-    delta_t: 0.001
+    delta_t: 0.005
     lambda_high: 450
     lambda_low: 350
     impulsive_tau_limit_multiplier: 1
@@ -103,8 +103,8 @@ global_controller_params:
     arm_nullspace_posture_stiffness: 1 
     effective_mass_maximization_task_weight: 0
     vector_orientation_task_weight: 200 
-    vector_orientation_task_stiffness: 40
-    vector_orientation_task_damping: 12
+    vector_orientation_task_stiffness: 100
+    vector_orientation_task_damping: 20
     curve_constraints:
       final_velocity:
       - 0
